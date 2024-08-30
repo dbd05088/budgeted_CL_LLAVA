@@ -4,6 +4,7 @@ import random
 import pickle
 import numpy as np
 import torch
+import torch.nn.functional as F
 from configuration.VLM_config_new import ModelArguments, DataArguments, TrainingArguments
 import transformers
 from utils.train_utils import get_VLMmodel, get_peft_state_maybe_zero_3, get_peft_state_non_lora_maybe_zero_3, safe_save_model_for_hf_trainer, load_deepspeed
@@ -102,11 +103,10 @@ def main():
     with open(file=f'collections/{data_args.dataset}/ma_splits/{data_args.dataset}_split_record.pkl', mode='rb') as f:
         split_config = pickle.load(f)
     eval_iter = split_config[training_args.seed]["train_eval_point"]
-    # 9 => (9 - 1) / 2 = 4, ceil(6 / 4) 
     if data_args.dataset == "Bongard-HOI":
         eval_point = np.array([sum(eval_iter[:i+1]) for i in range(len(eval_iter))]) * (int(np.ceil(6 / ((data_args.num_set - 1) // 2))))
     elif data_args.dataset == "Bongard-OpenWorld":
-        eval_point = np.array([sum(eval_iter[:i+1]) for i in range(len(eval_iter))]) * 2 #(2 * int(np.ceil(6 / ((data_args.num_set - 1) // 2))))
+        eval_point = np.array([sum(eval_iter[:i+1]) for i in range(len(eval_iter))]) * 4 #(2 * int(np.ceil(6 / ((data_args.num_set - 1) // 2))))
     print("eval_point")
     print(eval_point)
     
@@ -134,7 +134,12 @@ def main():
     training_loss = []
     start_time = time.time()
     memory = []
-    memory_size = 500
+    memory_size = 70
+    count_decay_ratio = 1
+    k_coeff = 0.4
+    temperature=0.125
+
+    memory_use_count = np.zeros(memory_size)
     num_iterations = training_args.num_iter
     total_batchsize = training_args.per_gpu_train_batch_size*training_args.world_size*training_args.gradient_accumulation_steps
     init_lr = training_args.learning_rate
@@ -163,7 +168,7 @@ def main():
     iteration = 0
     datalists = []
     
-    ### Memory Only ###
+    # ### Memory Only ###
     for i, sample in enumerate(train_datalists):
         if len(memory) == memory_size:
             memory.pop(random.randrange(memory_size))
@@ -176,6 +181,30 @@ def main():
                 batch = (batch*mul)[:total_batchsize]
                 datalists.extend(batch[:])
                 iteration -= 1
+
+    ### Ours (aL-SAR) ###
+    # for i, sample in enumerate(train_datalists):
+    #     if len(memory) == memory_size:
+    #         memory.pop(random.randrange(memory_size))
+    #     memory.append(sample)
+    #     iteration += training_args.num_iter
+    #     if iteration >= 1:
+    #         for _ in range(int(iteration)):
+    #             #batch = random.sample(memory, k=min(len(memory), total_batchsize))
+    #             #batch_idx = random.sample(list(range(len(memory))), k=min(len(memory), total_batchsize))
+    #             count_decay_ratio = total_batchsize / (len(memory) * k_coeff) 
+    #             memory_use_count *= (1-count_decay_ratio)
+    #             prob = F.softmax(-torch.Tensor((memory_use_count[:len(memory)] / len(memory)))/temperature, dim=0).numpy()
+    #             batch_idx = np.random.choice(list(range(len(memory))), size = min(len(memory), total_batchsize), replace=False, p = prob)
+    #             batch = [memory[idx] for idx in batch_idx]
+    #             mul = (total_batchsize//len(batch)) + 1
+    #             batch = (batch*mul)[:total_batchsize]
+    #             datalists.extend(batch[:])
+    #             iteration -= 1
+
+    #             # use count update
+    #             for idx in batch_idx:
+    #                 memory_use_count[idx] += 1
     
     if len(datalists) < num_iterations*total_batchsize:
         batch = random.sample(memory, k=min(len(memory), total_batchsize))
