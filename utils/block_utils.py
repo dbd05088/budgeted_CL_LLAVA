@@ -28,24 +28,24 @@ def generate_llava_blocks():
         blocks = []
         for attention_block_type in attention_block_types:
             blocks.extend([
-                f"base_model.model.model.layers.{num_block}.self_attn.{attention_block_type}",
-                f"base_model.model.model.layers.{num_block}.self_attn.{attention_block_type}.base_layer",
+                # f"base_model.model.model.layers.{num_block}.self_attn.{attention_block_type}",
+                # f"base_model.model.model.layers.{num_block}.self_attn.{attention_block_type}.base_layer",
                 f"base_model.model.model.layers.{num_block}.self_attn.{attention_block_type}.lora_A.default",
                 f"base_model.model.model.layers.{num_block}.self_attn.{attention_block_type}.lora_B.default"
                 ])
         for mlp_proj_block_type in mlp_proj_block_types:
             blocks.extend([
-                f"base_model.model.model.layers.0.mlp.{mlp_proj_block_type}",
-                f"base_model.model.model.layers.0.mlp.{mlp_proj_block_type}.base_layer",
+                # f"base_model.model.model.layers.0.mlp.{mlp_proj_block_type}",
+                # f"base_model.model.model.layers.0.mlp.{mlp_proj_block_type}.base_layer",
                 f"base_model.model.model.layers.0.mlp.{mlp_proj_block_type}.lora_A.default",
                 f"base_model.model.model.layers.0.mlp.{mlp_proj_block_type}.lora_B.default"
                 ])
         llm_blocks.append(blocks)
-    llm_blocks.append(["base_model.model.lm_head"])
+    # llm_blocks.append(["base_model.model.lm_head"])
 
     blocks = []
-    blocks.append(vision_blocks)
-    blocks.append(projection_blocks)
+    # blocks.append(vision_blocks)
+    # blocks.append(projection_blocks)
     blocks.extend(llm_blocks)
 
     return blocks
