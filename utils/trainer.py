@@ -242,13 +242,13 @@ class CustomLLaVATrainer(LLaVATrainer):
             loss = loss.mean()  # mean() to average on multi-gpu parallel training
 
         # backward 전에 freeze_idx 해주기
-        # if self.train_count > 2:
-        #     if self.unfreeze_rate < 1.0:
-        #         logits = outputs.logits.detach()
-        #         self.get_freeze_idx(logits, self.model.labels)
-        #     if np.random.rand() > self.unfreeze_rate:
-        #         print("freeze!!")
-        #         self.freeze_layers(model)
+        if self.train_count > 2:
+            if self.unfreeze_rate < 1.0:
+                logits = outputs.logits.detach()
+                self.get_freeze_idx(logits, self.model.labels)
+            if np.random.rand() > self.unfreeze_rate:
+                print("freeze!!")
+                self.freeze_layers(model)
 
         if self.use_apex:
             with amp.scale_loss(loss, self.optimizer) as scaled_loss:
@@ -1132,8 +1132,7 @@ class CustomLLaVATrainer(LLaVATrainer):
                                 
                                 if self.unfreeze_rate < 1:
                                     self.total_flops += len(grad.clone().detach().flatten())*2 / 10e9
-                        # else:
-                        #print("no grad", f"subblock_name.{n}")
+
 
         for i in range(self.num_blocks):
             if i not in self.freeze_idx or not self.frozen:
@@ -1153,16 +1152,16 @@ class CustomLLaVATrainer(LLaVATrainer):
     def freeze_layer(self, model, block_index):
         # blcok(i)가 들어간 layer 모두 freeze
         block_name = self.block_names[block_index]
-        print("freeze block_name")
-        pritn(block_name)
         # print("freeze", group_name)
         for subblock_name in block_name:
             for name, param in model.named_parameters():
-                if subblock_name in name:
+                print("subblock", subblock_name, "name", name)
+                if "weight" in name and ".".join(name.split(".")[:-1]) in self.target_update_parameters:
                     param.requires_grad = False
                     print("freeze!", subblock_name)
-                else:
-                    print("no freeze!", subblock_name)
+                # if subblock_name in name:
+                #     param.requires_grad = False
+                #     print("freeze!", subblock_name)
 
     def get_backward_flops(self):
         backward_flops = self.backward_flops
