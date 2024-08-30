@@ -1,7 +1,7 @@
 #/bin/bash
 # CIL CONFIG
 # bongard_openworld_ma_num7_iter2
-NOTE="bongard_openworld_ma_num7_iter1" # Short description of the experiment. (WARNING: logs/results with the same note will be overwritten!)
+NOTE="Bongard-OpenWorld_ma_num7_iter1_memonly" # Short description of the experiment. (WARNING: logs/results with the same note will be overwritten!)
 MODE="VLM"
 MODEL_ARCH="llava" # llava bunny_3b bunny_8b
 RND_SEED=1
@@ -9,12 +9,12 @@ RND_SEED=1
 # fed args
 DATASET="Bongard-OpenWorld"
 DATA_TYPE="ma" #ma, generaetd, web
-NUM_SET=5 # 5 - support set : 4 (2 positive, 2 negative) + 1 query, choice = [5, 7, 9]
+NUM_SET=7 # 5 - support set : 4 (2 positive, 2 negative) + 1 query, choice = [5, 7, 9]
 MODEL_MAX_LEN=10000
 NUM_ITER=1
 BATCHSIZE=2
 LR=5e-5
-MM_PROJECTOR_LR=5e-5
+MM_PROJECTOR_LR=0
 OPT_NAME="adamw_torch" # adam8bit_bnb adamw_torch
 SCHED_NAME="constant" #cosine
 WARMUP_RATIO=0.03 # SHOULD BE 0.03 / NUM_ROUNDS
@@ -44,8 +44,8 @@ else
     exit 1
 fi
 # --master_port 29500
-    nohup deepspeed --master_port 29601 \
-    --include localhost:1 \
+    nohup deepspeed --master_port 29602 \
+    --include localhost:0 \
     main_new_llava_trainer.py \
     --deepspeed ./deepspeed_script/zero2.json \
     --model_name_or_path $MODEL_NAME \
