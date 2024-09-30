@@ -230,7 +230,7 @@ def main():
     
     flops_dict = None
     previous_state_dict = None
-    for curr_round in range(3, len(eval_point)):
+    for curr_round in range(0, len(eval_point)):
         datalist = get_dataset_this_round(datalists, curr_round, eval_point * total_batchsize, data_args.dataset, num_iterations)
         data_module = make_supervised_data_module(client_data=datalist, # sub_dataset
                                             tokenizer=tokenizer,
