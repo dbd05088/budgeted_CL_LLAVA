@@ -49,8 +49,9 @@ class CustomStoppingCriteria(StoppingCriteria):
                 else :
                     should_stop = True
         return should_stop
+
     
-def evaluate(dataset, dataname, round, model, tokenizer, device, model_args, training_args, logger):
+def evaluate(dataset, dataname, task, eval_task, model, tokenizer, device, model_args, training_args, logger):
     dataloader = DataLoader(dataset, batch_size=2, shuffle=False, pin_memory=True, num_workers=2, drop_last=False, collate_fn=DataCollatorForGenerationDataset(tokenizer))
     # dataloader = DataLoader(dataset, batch_size=1, shuffle=False, pin_memory=True, num_workers=4, drop_last=False)
     
@@ -72,6 +73,7 @@ def evaluate(dataset, dataname, round, model, tokenizer, device, model_args, tra
     with torch.no_grad():
         # for i, (inputs, imgs, golds, prompts, img_files) in enumerate(tqdm(dataloader)):
         for i, batch in enumerate(tqdm(dataloader)):
+
             inputs, imgs, golds, prompts, img_files = batch['input_ids'], batch['images'], batch['gold'], batch['prompt'], batch['image_file']
             attention_mask = batch['attention_mask'].to(device=device)
             
@@ -107,6 +109,8 @@ def evaluate(dataset, dataname, round, model, tokenizer, device, model_args, tra
             # breakpoint()
             for pred_sentence, gold, prompt, img_file in zip(pred_sentences, golds, prompts, img_files):
                 pred_sentence = pred_sentence.strip()
+                print()
+                print("gt", gold, "answer", pred_sentence)
                 input_label = tokenizer.encode(gold)
                 output_id = tokenizer.encode(pred_sentence)
                 n_word = len(set(input_label))
@@ -120,15 +124,16 @@ def evaluate(dataset, dataname, round, model, tokenizer, device, model_args, tra
                 n_word_correct += n_correct
                 cnt += 1
 
+
+
     scores = NLPEvaluator(predictions).evaluate()
     scores["precision"] = n_word_correct / n_word_total
     scores["recall"] = n_word_correct / n_generated_word_total
     
     predictions.append(scores)
     #save predictions
-
-    logger.info(f"Test Task{round} | Data {dataname} | precision {scores['precision']:.4f} | recall {scores['recall']:.4f} | Bleu_1 {scores['Bleu_1']} | Bleu_2 {scores['Bleu_2']} | Bleu_3 {scores['Bleu_3']} |Bleu_4 {scores['Bleu_4']} | METEOR {scores['METEOR']} | ROUGE_L {scores['ROUGE_L']} | CIDEr {scores['CIDEr']} |")
-    with open(f"./eval_results/{training_args.mode}/{training_args.note}/task{task}_evaltask{eval_task}_{dataname}.json", 'w') as fp:
+    logger.info(f"Test | Data {dataname} | curr_task {task} | eval_task {eval_task}| Data {dataname} | precision {scores['precision']:.4f} | recall {scores['recall']:.4f} | Bleu_1 {scores['Bleu_1']} | Bleu_2 {scores['Bleu_2']} | Bleu_3 {scores['Bleu_3']} |Bleu_4 {scores['Bleu_4']} | METEOR {scores['METEOR']} | ROUGE_L {scores['ROUGE_L']} | CIDEr {scores['CIDEr']} |")
+    with open(f"./eval_results/{training_args.mode}/{training_args.note}/seed{training_args.seed}/task{task}_evaltask{eval_task}_{dataname}.json", 'w') as fp:
         json.dump(predictions, fp, indent=4)
     torch.cuda.empty_cache()
 
@@ -183,7 +188,6 @@ def evaluate_choices(dataset, dataname, task, eval_task, model, tokenizer, devic
 
             for pred_sentence, gold, prompt, img_file in zip(pred_sentences, golds, prompts, img_files):
                 pred_sentence = pred_sentence.strip()
-                
                 choices = parse_choice_list(prompt)
                 print()
                 print("gt", gold, "answer", pred_sentence)
@@ -352,7 +356,7 @@ def main():
     past_test_datalists = []
     model, tokenizer, data_args = get_VLMmodel(model_args, training_args, bnb_model_from_pretrained_args, data_args)
     if training_args.mode in ["VLM"]:
-        test_datalists = get_datalists(data_args, training_args.seed)
+        test_datalists = get_datalists(data_args, training_args, training_args.seed)
     else:
         if training_args.mode == "VLM_ood":
             test_datalists = get_ood_datalists(data_args, training_args.seed, num_test = 5)
@@ -370,19 +374,23 @@ def main():
             server_state_dict = torch.load(f'./checkpoints_{training_args.note}/seed{training_args.seed}/{training_args.note}_task{task_num+1}.pth', map_location='cpu')
         model.load_state_dict(server_state_dict, strict=False)
         
-        for eval_task_num, past_test_datalist in enumerate(past_test_datalists):
-            dataset = GenerationDataset(past_test_datalist, tokenizer, data_args)
-            # if data_info['type'] == 'open-ended':
-            #     evaluate(dataset, data_info['data_name'], training_args.round_to_eval, model, tokenizer, device, model_args, training_args, logger, None)
-            # elif data_info['type'] == 'multi-choice':
-            #     evaluate_choices(dataset, data_info['data_name'], training_args.round_to_eval, model, tokenizer, device, model_args, training_args, logger, None)
-            # else:
-            evaluate_choices(dataset, data_args.dataset, task_num + 1, eval_task_num + 1, model, tokenizer, device, model_args, training_args, logger)
-            #evaluate(dataset, data_args.dataset, task_num + 1, eval_task_num + 1, model, tokenizer, device, model_args, training_args, logger)
-            server_eval_key.append(data_args.dataset)
-            # past_test_datalists += test_datalist
+        if training_args.mode == "VLM":
+            for eval_task_num, past_test_datalist in enumerate(past_test_datalists):
+                dataset = GenerationDataset(past_test_datalist, tokenizer, data_args)
+                if "text" in training_args.note and data_args.dataset == "Bongard-OpenWorld":
+                    evaluate(dataset, data_args.dataset, task_num + 1, eval_task_num + 1, model, tokenizer, device, model_args, training_args, logger)
+                else:
+                    evaluate_choices(dataset, data_args.dataset, task_num + 1, eval_task_num + 1, model, tokenizer, device, model_args, training_args, logger)
+                server_eval_key.append(data_args.dataset)
+        else:
+            dataset = GenerationDataset(past_test_datalists[0], tokenizer, data_args)
+            if "text" in training_args.note and data_args.dataset == "Bongard-OpenWorld":
+                evaluate(dataset, data_args.dataset, task_num + 1, eval_task_num + 1, model, tokenizer, device, model_args, training_args, logger)
+            else:
+                evaluate_choices(dataset, data_args.dataset, task_num + 1, task_num + 1, model, tokenizer, device, model_args, training_args, logger)
+            server_eval_key.append(data_args.dataset)    
 
-def get_datalists(data_args, seed = 1):
+def get_datalists(data_args, training_args, seed = 1):
 
     if data_args.dataset == "Bongard-HOI":        
         with open(f"seen_tasks/Bongard-HOI_seen_tasks.pkl", mode='rb') as f:
@@ -391,9 +399,14 @@ def get_datalists(data_args, seed = 1):
     elif data_args.dataset == "Bongard-OpenWorld":    
         with open(f"collections/{data_args.dataset}/ma_splits/{data_args.dataset}_split_record.pkl", mode='rb') as f:
             task_splits=pickle.load(f)[seed]["task_splits"]   
-        
-    with open(f"collections/{data_args.dataset}/ma/{data_args.num_set}_set/{data_args.dataset}_test.json") as fp:
-        whole_test_datalists = json.load(fp)
+    
+    if "text" in training_args.note: 
+        print("here!!")
+        with open(f"collections/{data_args.dataset}/ma_text/{data_args.num_set}_set/{data_args.dataset}_test.json") as fp:
+            whole_test_datalists = json.load(fp)
+    else:
+        with open(f"collections/{data_args.dataset}/ma/{data_args.num_set}_set/{data_args.dataset}_test.json") as fp:
+            whole_test_datalists = json.load(fp)
         
     test_df = pd.DataFrame(whole_test_datalists)
     df_keys = list(test_df.keys())

@@ -1,13 +1,13 @@
 #/bin/bash
 # CIL CONFIG
-NOTE="bongard_openworld_ma_num7_iter2" # Short description of the experiment. (WARNING: logs/results with the same note will be overwritten!)
+NOTE="Bongard-HOI_ours_text_iter0.5_mem500" # Short description of the experiment. (WARNING: logs/results with the same note will be overwritten!)
 MODE="VLM"
 MODEL_ARCH="llava" # llava bunny_3b bunny_8b
 RND_SEED=1
 
 # fed args
-DATASET="Bongard-OpenWorld"
-DATA_TYPE="ma" #ma, generaetd, web
+DATASET="Bongard-HOI"
+DATA_TYPE="ma_text" #ma, generaetd, web
 NUM_SET=7 # 5 - support set : 4 (2 positive, 2 negative) + 1 query, choice = [5, 7, 9]
 MODEL_MAX_LEN=10000
 
@@ -43,7 +43,7 @@ else
     exit 1
 fi
 # --master_port 29500
-CUDA_VISIBLE_DEVICES=5 python eval_VLM_CL.py \
+CUDA_VISIBLE_DEVICES=0 nohup python eval_VLM_CL.py \
     --model_name_or_path $MODEL_NAME \
     --model_name_for_dataarg $MODEL_NAME \
     --model_type $MODEL_TYPE \
@@ -70,7 +70,7 @@ CUDA_VISIBLE_DEVICES=5 python eval_VLM_CL.py \
     --save_strategy "no" \
     --logging_steps 2 \
     --note $NOTE \
-    --output_dir "./results/test/" # > ./nohup/fedavg_llava_sc12_lr5e-5_bs16_itr100_constant_nodist.log 2>&1 &
+    --output_dir "./results/test/" & # > ./nohup/fedavg_llava_sc12_lr5e-5_bs16_itr100_constant_nodist.log 2>&1 &
 
 # --eval_period $EVAL_PERIOD
 #
