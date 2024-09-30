@@ -3,6 +3,9 @@ import os
 import random
 import pickle
 import numpy as np
+import itertools
+
+
 import torch
 import torch.nn.functional as F
 from configuration.VLM_config_new import ModelArguments, DataArguments, TrainingArguments
@@ -82,10 +85,6 @@ def main():
     random.seed(training_args.seed)
 
     model, tokenizer, data_args = get_VLMmodel(model_args, training_args, bnb_model_from_pretrained_args, data_args)
-
-    # for name, parameter in model.named_parameters():
-    #     print(name, parameter.shape)
-    print(model)
     autograd_hacks.add_hooks(model)
 
     ### Load Train & Test datalists ###
@@ -103,12 +102,21 @@ def main():
     with open(file=f'collections/{data_args.dataset}/ma_splits/{data_args.dataset}_split_record.pkl', mode='rb') as f:
         split_config = pickle.load(f)
     eval_iter = split_config[training_args.seed]["train_eval_point"]
+    # 9 => (9 - 1) / 2 = 4, ceil(6 / 4) 
     if data_args.dataset == "Bongard-HOI":
-        eval_point = np.array([sum(eval_iter[:i+1]) for i in range(len(eval_iter))]) * (int(np.ceil(6 / ((data_args.num_set - 1) // 2))))
+        if "text" in data_args.data_type:
+            eval_point = np.array([sum(eval_iter[:i+1]) for i in range(len(eval_iter))])    
+        else:
+            eval_point = np.array([2*sum(eval_iter[:i+1]) for i in range(len(eval_iter))])
     elif data_args.dataset == "Bongard-OpenWorld":
-        eval_point = np.array([sum(eval_iter[:i+1]) for i in range(len(eval_iter))]) * 4 #(2 * int(np.ceil(6 / ((data_args.num_set - 1) // 2))))
+        nCr = len(list(itertools.combinations(np.arange(7), int((data_args.num_set-1)//2)+1)))
+        if "text" in data_args.data_type:
+            eval_point = np.array([sum(eval_iter[:i+1]) for i in range(len(eval_iter))]) * nCr
+        else:
+            eval_point = np.array([sum(eval_iter[:i+1]) for i in range(len(eval_iter))]) * 2 * nCr
     print("eval_point")
     print(eval_point)
+    
     
     # select functions
     #load_state_dict, create_trainer = select_method(training_args.mode)
@@ -129,12 +137,13 @@ def main():
     )
     global_state_dict.update(non_lora_state_dict)
     local_state_dict = copy.deepcopy(global_state_dict)
+    # print(local_state_dict)
     local_state_dict_keys = local_state_dict.keys()
 
     training_loss = []
     start_time = time.time()
     memory = []
-    memory_size = 70
+    memory_size = 500
     count_decay_ratio = 1
     k_coeff = 0.4
     temperature=0.125
@@ -220,13 +229,47 @@ def main():
     print("len(train_datalists)", len(train_datalists), "len(datalists)", len(datalists))
     
     flops_dict = None
-    for curr_round in range(len(eval_point)):
-        datalist = get_dataset_this_round(datalists, curr_round, eval_point * total_batchsize, data_args.dataset)
+    previous_state_dict = None
+    for curr_round in range(3, len(eval_point)):
+        datalist = get_dataset_this_round(datalists, curr_round, eval_point * total_batchsize, data_args.dataset, num_iterations)
         data_module = make_supervised_data_module(client_data=datalist, # sub_dataset
                                             tokenizer=tokenizer,
                                             data_args=copy.deepcopy(data_args))
+        
+        # with torch.no_grad():
+        #     print("model & local statedict!")
+        #     for name, param in model.named_parameters():
+        #         if param.requires_grad:
+        #             print(name, torch.sum(param.cpu() != local_state_dict[name].cpu()))
 
-        trainer = create_trainer(model, tokenizer, training_args, data_module)
+        #     print("model & init model!")
+        #     init_state_dict = model.state_dict()
+        #     for name, param in model.named_parameters():
+        #         if param.requires_grad:
+        #             print(name, torch.sum(param.cpu() != init_state_dict[name].cpu()))
+
+        #     print("init & local statedict")
+        #     for name, param in model.named_parameters():
+        #         if param.requires_grad:
+        #             print(name, torch.sum(local_state_dict[name].cpu() != init_state_dict[name].cpu()))
+        # if previous_state_dict is not None:
+        #     load_state_dict(model, previous_state_dict, training_args)
+        #     print("previous not none!!")
+        # else:
+        #     print("previous none!!")
+
+        # if previous_state_dict is not None:
+
+        model, tokenizer, data_args = get_VLMmodel(model_args, training_args, bnb_model_from_pretrained_args, data_args)
+        autograd_hacks.add_hooks(model)
+        if curr_round != 0:
+            print("load", f"seed{training_args.seed}/{training_args.note}_task{curr_round}.pth")
+            checkpoint = torch.load(os.path.join(training_args.state_dir, f"seed{training_args.seed}/{training_args.note}_task{curr_round}.pth"), weights_only=True)
+            load_state_dict(model, checkpoint, training_args)
+        else:
+            print("load skip")
+
+        trainer = create_trainer(model, tokenizer, training_args, data_module, model_args.ours)
 
         flops_dict = get_model_complexity_info(trainer, (3, 336, 336),
                                                 as_strings=False,
@@ -250,7 +293,8 @@ def main():
         model.config.use_cache = True
         
         # save local model
-        output_dir = os.path.join(training_args.state_dir, f"{training_args.note}_task{curr_round+1}.pth")
+        os.makedirs(f"{training_args.state_dir}/seed{training_args.seed}", exist_ok=True)
+        output_dir = os.path.join(training_args.state_dir, f"seed{training_args.seed}/{training_args.note}_task{curr_round+1}.pth")
         if training_args.lora_enable:
             state_dict = get_peft_state_maybe_zero_3(
                 model.named_parameters(), training_args.lora_bias
@@ -261,7 +305,7 @@ def main():
             state_dict.update(non_lora_state_dict)
         else:
             state_dict = {k: t.detach().cpu().clone() for k, t in model.named_parameters() if t.requires_grad}
-        local_state_dict = copy.deepcopy(state_dict)
+        # local_state_dict = copy.deepcopy(state_dict)
         
 
         k_to_del = []
@@ -273,22 +317,32 @@ def main():
         if (training_args.local_rank == 0 or training_args.local_rank == -1):
             torch.save(state_dict, output_dir)
         
-        local_state_dict = getattr(trainer, 'global_weight', None)
-        if local_state_dict is not None:
-            local_state_dict = copy.deepcopy(local_state_dict)
+        # previous_state_dict = state_dict
+        # local_state_dict = getattr(trainer, 'global_weight', None)
+        # if local_state_dict is not None:
+        #     local_state_dict = copy.deepcopy(local_state_dict)
         
+        logger.info(f"======== Summary =======")
+        logger.info(f"Total FLOPs {trainer.total_flops:4f}")
+
         trainer.deepspeed.empty_partition_cache()
+        trainer.reset()
         del trainer
+
         logger.info(f"Training loss {training_loss[-1]} | elapsed time {datetime.timedelta(seconds=int(time.time() - start_time))} | ")
         logger.info("total done\n")
 
+        model.config.use_cache = False
+        autograd_hacks.remove_hooks(model)
+        del model
+        torch.cuda.empty_cache()
 
-def get_dataset_this_round(train_datalists, curr_round, eval_points, dataset):
+def get_dataset_this_round(train_datalists, curr_round, eval_points, dataset, num_iterations):
     
     if curr_round == 0:
-        curr_train_datalists = train_datalists[:eval_points[curr_round]]
+        curr_train_datalists = train_datalists[:int(eval_points[curr_round]*num_iterations)]
     else:
-        curr_train_datalists = train_datalists[eval_points[curr_round-1]:eval_points[curr_round]]
+        curr_train_datalists = train_datalists[int(eval_points[curr_round-1]*num_iterations):int(eval_points[curr_round]*num_iterations)]
     
     ### for checking ###
     if dataset == "Bongard-OpenWorld":
@@ -311,7 +365,6 @@ def get_dataset_this_round(train_datalists, curr_round, eval_points, dataset):
         print(seen_action_object)
     
     return curr_train_datalists
-    
 
 def make_supervised_data_module(client_data, tokenizer: transformers.PreTrainedTokenizer,
                                 data_args) -> Dict:

@@ -206,7 +206,7 @@ def evaluate_choices(dataset, dataname, task, eval_task, model, tokenizer, devic
     predictions.append(scores)
     #save predictions
     logger.info(f"Test | Data {dataname} | curr_task {task} | eval_task {eval_task} | accuracy {scores['accuracy']} |")
-    with open(f"./eval_results/{training_args.mode}/{training_args.note}/task{task}_evaltask{eval_task}_{dataname}.json", 'w') as fp:
+    with open(f"./eval_results/{training_args.mode}/{training_args.note}/seed{training_args.seed}/task{task}_evaltask{eval_task}_{dataname}.json", 'w') as fp:
         json.dump(predictions, fp, indent=4)
     torch.cuda.empty_cache()
 
@@ -324,8 +324,8 @@ def main():
     logging.config.fileConfig("./configuration/logging.conf")
     logger = logging.getLogger()
 
-    os.makedirs(f"eval_results/{training_args.mode}/{training_args.note}", exist_ok=True)
-    fileHandler = logging.FileHandler(f'eval_results/{training_args.mode}/{training_args.note}/round_{training_args.round_to_eval}.log', mode="w")
+    os.makedirs(f"eval_results/{training_args.mode}/{training_args.note}/seed{training_args.seed}", exist_ok=True)
+    fileHandler = logging.FileHandler(f'eval_results/{training_args.mode}/{training_args.note}/seed{training_args.seed}/round_{training_args.round_to_eval}.log', mode="w")
 
     # writer = SummaryWriter(f'tensorboard/{training_args.mode}/{training_args.note}/federated')
 
@@ -366,8 +366,8 @@ def main():
             logger.info(f'./zeroshot.pth')
             server_state_dict = torch.load(f'./zeroshot.pth', map_location='cpu')
         else:
-            logger.info(f'load ./checkpoints_{training_args.note}/{training_args.note}_task{task_num+1}.pth')
-            server_state_dict = torch.load(f'./checkpoints_{training_args.note}/{training_args.note}_task{task_num+1}.pth', map_location='cpu')
+            logger.info(f'load ./checkpoints_{training_args.note}/seed{training_args.seed}/{training_args.note}_task{task_num+1}.pth')
+            server_state_dict = torch.load(f'./checkpoints_{training_args.note}/seed{training_args.seed}/{training_args.note}_task{task_num+1}.pth', map_location='cpu')
         model.load_state_dict(server_state_dict, strict=False)
         
         for eval_task_num, past_test_datalist in enumerate(past_test_datalists):
