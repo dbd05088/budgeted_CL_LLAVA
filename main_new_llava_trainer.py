@@ -4,7 +4,7 @@ import random
 import pickle
 import numpy as np
 import itertools
-
+import gc
 
 import torch
 import torch.nn.functional as F
@@ -335,6 +335,7 @@ def main():
         model.config.use_cache = False
         autograd_hacks.remove_hooks(model)
         del model
+        gc.collect()
         torch.cuda.empty_cache()
 
 def get_dataset_this_round(train_datalists, curr_round, eval_points, dataset, num_iterations):

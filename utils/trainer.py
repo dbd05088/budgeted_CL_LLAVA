@@ -2631,9 +2631,10 @@ class CustomLLaVATrainer(LLaVATrainer):
             for name, param in model.named_parameters():
                 # print("subblock", subblock_name, "name", name)
                 if "weight" in name and ".".join(name.split(".")[1:-1]) in self.target_update_parameters:
-                    param.requires_grad = False
-                    # print("freeze!", subblock_name)
-                    break
+                    if ".".join(name.split(".")[1:-1]) == subblock_name:
+                        param.requires_grad = False
+                        print("freeze!", subblock_name, name, ".".join(name.split(".")[1:-1]))
+
                 # if subblock_name in name:
                 #     param.requires_grad = False
                 #     print("freeze!", subblock_name)
