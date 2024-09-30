@@ -18,6 +18,7 @@ class ModelArguments:
     mm_patch_merge_type: Optional[str] = field(default='flat')
     mm_vision_select_feature: Optional[str] = field(default="patch")
     max_new_tokens: Optional[int] = field(default=512)
+    ours: bool = field(default=False)
 
 
 @dataclass
@@ -42,7 +43,7 @@ class TrainingArguments(transformers.TrainingArguments):
     round_to_eval: int = None
     eval_temp: float = 0.2
     eval_server: bool = True
-    num_iter:int = field(default=100)
+    num_iter:float = field(default=100)
 
     # cl config
     future_steps:int = field(default=4)
