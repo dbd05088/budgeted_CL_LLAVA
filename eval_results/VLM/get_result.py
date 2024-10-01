@@ -5,7 +5,7 @@ from scipy import stats
 exp_dirs = os.listdir(".")
 exp_dirs.sort()
 seeds = [1, 2, 3]
-target_dir = ['Bongard-OpenWorld_base_iter0.5_mem500', 'Bongard-OpenWorld_ours_iter0.5_mem500'] 
+target_dir = ['Bongard-HOI_base_iter0.5_mem500', 'Bongard-HOI_ours_iter0.5_mem500','Bongard-HOI_base_text_iter0.5_mem500', 'Bongard-HOI_ours_text_iter0.5_mem500', 'Bongard-OpenWorld_base_iter0.5_mem500', 'Bongard-OpenWorld_ours_iter0.5_mem500'] 
 print(f"{'A_avg':>62} \t\t\t A_last")
 for exp_dir in exp_dirs:
     if exp_dir not in target_dir:
@@ -30,7 +30,6 @@ for exp_dir in exp_dirs:
             average_accuracy.append(np.mean(accuracy))
         except:
             pass
-        print(average_accuracy)
     print(f"{exp_dir:<50} \t {np.mean(average_accuracy):.2f}/{stats.sem(average_accuracy):.2f} \t\t {np.mean(last_accuracy):.2f}/{stats.sem(last_accuracy):.2f}")
         
         

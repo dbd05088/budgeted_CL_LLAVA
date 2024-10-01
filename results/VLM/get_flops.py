@@ -1,7 +1,7 @@
 import os
 import numpy as np
 
-target_dir = ['Bongard-OpenWorld_base_iter0.5_mem500', 'Bongard-OpenWorld_ours_iter0.5_mem500']
+target_dir = ['Bongard-HOI_base_text_iter0.5_mem500', 'Bongard-HOI_ours_text_iter0.5_mem500']
 
 for target in target_dir:
     target_flops = []

@@ -402,7 +402,7 @@ def get_datalists(data_args, training_args, seed = 1):
     
     if "text" in training_args.note: 
         print("here!!")
-        with open(f"collections/{data_args.dataset}/ma_text/{data_args.num_set}_set/{data_args.dataset}_test.json") as fp:
+        with open(f"collections/{data_args.dataset}/ma_text_ver3_more/{data_args.num_set}_set/{data_args.dataset}_test.json") as fp:
             whole_test_datalists = json.load(fp)
     else:
         with open(f"collections/{data_args.dataset}/ma/{data_args.num_set}_set/{data_args.dataset}_test.json") as fp:
