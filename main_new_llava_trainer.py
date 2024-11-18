@@ -5,6 +5,7 @@ import pickle
 import numpy as np
 import itertools
 import gc
+from scipy.special import softmax
 
 import torch
 import torch.nn.functional as F
@@ -176,44 +177,72 @@ def main():
     
     iteration = 0
     datalists = []
-    
-    # ### Memory Only ###
-    for i, sample in enumerate(train_datalists):
-        if len(memory) == memory_size:
-            memory.pop(random.randrange(memory_size))
-        memory.append(sample)
-        iteration += training_args.num_iter
-        if iteration >= 1:
-            for _ in range(int(iteration)):
-                batch = random.sample(memory, k=min(len(memory), total_batchsize))
-                mul = (total_batchsize//len(batch)) + 1
-                batch = (batch*mul)[:total_batchsize]
-                datalists.extend(batch[:])
-                iteration -= 1
 
-    ### Ours (aL-SAR) ###
-    # for i, sample in enumerate(train_datalists):
-    #     if len(memory) == memory_size:
-    #         memory.pop(random.randrange(memory_size))
-    #     memory.append(sample)
-    #     iteration += training_args.num_iter
-    #     if iteration >= 1:
-    #         for _ in range(int(iteration)):
-    #             #batch = random.sample(memory, k=min(len(memory), total_batchsize))
-    #             #batch_idx = random.sample(list(range(len(memory))), k=min(len(memory), total_batchsize))
-    #             count_decay_ratio = total_batchsize / (len(memory) * k_coeff) 
-    #             memory_use_count *= (1-count_decay_ratio)
-    #             prob = F.softmax(-torch.Tensor((memory_use_count[:len(memory)] / len(memory)))/temperature, dim=0).numpy()
-    #             batch_idx = np.random.choice(list(range(len(memory))), size = min(len(memory), total_batchsize), replace=False, p = prob)
-    #             batch = [memory[idx] for idx in batch_idx]
-    #             mul = (total_batchsize//len(batch)) + 1
-    #             batch = (batch*mul)[:total_batchsize]
-    #             datalists.extend(batch[:])
-    #             iteration -= 1
+    if not model_args.sar:    
+        ### Memory Only ###
+        for i, sample in enumerate(train_datalists):
+            if len(memory) == memory_size:
+                memory.pop(random.randrange(memory_size))
+            memory.append(sample)
+            iteration += training_args.num_iter
+            if iteration >= 1:
+                for _ in range(int(iteration)):
+                    batch = random.sample(memory, k=min(len(memory), total_batchsize))
+                    mul = (total_batchsize//len(batch)) + 1
+                    batch = (batch*mul)[:total_batchsize]
+                    datalists.extend(batch[:])
+                    iteration -= 1
+    else:
+        print("@@SAR@@")
+        ### aL-SAR ###
+        klasses = np.array([])
+        memory_count = np.array([])
+        cls_memory_count = np.array([])
+        cls_memory = []
+        cls_indices = []
+        cls_dict = {}
+        T = 0.125
+        count_decay_ratio = 0.9
 
-    #             # use count update
-    #             for idx in batch_idx:
-    #                 memory_use_count[idx] += 1
+        for i, sample in enumerate(train_datalists):
+            if len(memory) == memory_size:
+                # reservoir로 해보자
+                pop_index = random.randrange(memory_size)
+                memory.pop(pop_index)
+                cls_indices.pop(pop_index)
+                memory_count = np.delete(memory_count, pop_index, 0)
+
+            if f"{sample['object_class']}_{sample['action_class']}" not in cls_memory:
+                cls_memory.append(f"{sample['object_class']}_{sample['action_class']}")
+                cls_dict[f"{sample['object_class']}_{sample['action_class']}"] = len(cls_memory_count)
+                cls_memory_count = np.append(cls_memory_count, 0)
+            cls_indices.append(f"{sample['object_class']}_{sample['action_class']}")
+
+            memory.append(sample)
+            memory_count = np.append(memory_count, 0)
+            iteration += training_args.num_iter
+            if iteration >= 1:
+                for _ in range(int(iteration)):
+
+                    if len(memory) > total_batchsize:
+                        count_decay_ratio = total_batchsize / (len(memory)*k_coeff)
+                        memory_count *= (1-count_decay_ratio)
+                        cls_memory_count *= (1-count_decay_ratio)
+
+                    cls_score_sum = [cls_dict[klass] for klass in cls_indices]
+                    sample_score = memory_count + cls_score_sum
+                    weight = softmax(-sample_score/T)
+                    sample_idx = np.random.choice(len(memory), min(len(memory), total_batchsize), p=weight, replace=False)
+                    batch = [memory[idx] for idx in sample_idx]
+                    mul = (total_batchsize//len(batch)) + 1
+                    batch = (batch*mul)[:total_batchsize]
+                    datalists.extend(batch[:])
+                    iteration -= 1
+
+                    for idx in sample_idx:
+                        memory_count[idx] += 1
+                        cls_memory_count[cls_dict[cls_indices[idx]]] += 1
+
     
     if len(datalists) < num_iterations*total_batchsize:
         batch = random.sample(memory, k=min(len(memory), total_batchsize))
@@ -236,29 +265,6 @@ def main():
                                             tokenizer=tokenizer,
                                             data_args=copy.deepcopy(data_args))
         
-        # with torch.no_grad():
-        #     print("model & local statedict!")
-        #     for name, param in model.named_parameters():
-        #         if param.requires_grad:
-        #             print(name, torch.sum(param.cpu() != local_state_dict[name].cpu()))
-
-        #     print("model & init model!")
-        #     init_state_dict = model.state_dict()
-        #     for name, param in model.named_parameters():
-        #         if param.requires_grad:
-        #             print(name, torch.sum(param.cpu() != init_state_dict[name].cpu()))
-
-        #     print("init & local statedict")
-        #     for name, param in model.named_parameters():
-        #         if param.requires_grad:
-        #             print(name, torch.sum(local_state_dict[name].cpu() != init_state_dict[name].cpu()))
-        # if previous_state_dict is not None:
-        #     load_state_dict(model, previous_state_dict, training_args)
-        #     print("previous not none!!")
-        # else:
-        #     print("previous none!!")
-
-        # if previous_state_dict is not None:
 
         model, tokenizer, data_args = get_VLMmodel(model_args, training_args, bnb_model_from_pretrained_args, data_args)
         autograd_hacks.add_hooks(model)
@@ -278,17 +284,8 @@ def main():
                                                 original_opt=trainer.get_optimizer(),
                                                 opt_name="adam", lr=0.0001, llava=True)
         trainer.set_flops_dict(flops_dict)
-
-        # for k, t in model.named_parameters():
-        #     if t.requires_grad:
-        #         print("trainable", k, t.shape)
-
         results = trainer.train()
         training_loss.append(results.training_loss)
-        
-        # if training_args.local_rank == 0 or training_args.local_rank == -1: 
-        #     path = os.path.join(training_args.state_dir, f"{client_id}_trainer_state.json")
-        #     trainer.state.save_to_json(path)
         
         model.config.use_cache = True
         
@@ -316,11 +313,6 @@ def main():
             del state_dict[k]
         if (training_args.local_rank == 0 or training_args.local_rank == -1):
             torch.save(state_dict, output_dir)
-        
-        # previous_state_dict = state_dict
-        # local_state_dict = getattr(trainer, 'global_weight', None)
-        # if local_state_dict is not None:
-        #     local_state_dict = copy.deepcopy(local_state_dict)
         
         logger.info(f"======== Summary =======")
         logger.info(f"Total FLOPs {trainer.total_flops:4f}")

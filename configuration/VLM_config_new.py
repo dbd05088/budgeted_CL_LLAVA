@@ -19,6 +19,8 @@ class ModelArguments:
     mm_vision_select_feature: Optional[str] = field(default="patch")
     max_new_tokens: Optional[int] = field(default=512)
     ours: bool = field(default=False)
+    sar: bool = field(default=False)
+
 
 
 @dataclass
